@@ -2,55 +2,17 @@ const STORAGE_KEY = "SCHOOL_DDAY_TASKS";
 const LEGACY_STORAGE_KEY = "school-dday-dashboard.tasks.v1";
 const CATEGORIES = ["공문/보고", "품의/정산", "학급/학생", "행사/수업", "연수/기타"];
 const PRIORITIES = ["긴급", "보통", "여유"];
-const WORKFLOW_TEMPLATES = [
-  {
-    name: "운동회",
-    pattern: /운동회|체육대회|한마음대회/,
-    steps: [
-      { offset: 30, title: "운동회 기본 계획서 작성" },
-      { offset: 20, title: "학년별 종목 및 준비 물품 취합" },
-      { offset: 15, title: "운동회 물품 구입비 지출 품의" },
-      { offset: 10, title: "안전관리·우천 대책 및 역할 분담 점검" },
-      { offset: 7, title: "가정통신문 및 행사 안내 발송" },
-      { offset: 1, title: "운동장·방송·구급 물품 최종 점검" }
-    ]
-  },
-  {
-    name: "현장체험학습",
-    pattern: /현장체험|체험학습|수학여행/,
-    steps: [
-      { offset: 30, title: "현장체험학습 기본 계획 및 사전답사" },
-      { offset: 21, title: "차량·시설 계약 및 지출 품의" },
-      { offset: 14, title: "참가 동의서 및 건강 상태 취합" },
-      { offset: 7, title: "안전교육 및 비상 연락망 점검" },
-      { offset: 1, title: "인원·차량·구급 물품 최종 확인" }
-    ]
-  },
-  {
-    name: "공개수업",
-    pattern: /공개수업|수업공개|학부모 참관/,
-    steps: [
-      { offset: 21, title: "공개수업 운영 계획 수립" },
-      { offset: 14, title: "수업안 및 활동 자료 초안 작성" },
-      { offset: 7, title: "학부모 안내 및 참관 신청 취합" },
-      { offset: 3, title: "수업 자료·교실 환경 최종 점검" }
-    ]
-  },
-  {
-    name: "졸업식",
-    pattern: /졸업식|졸업 행사/,
-    steps: [
-      { offset: 30, title: "졸업식 운영 계획 및 역할 분담" },
-      { offset: 20, title: "상장·졸업장·상품 명단 점검" },
-      { offset: 14, title: "행사 물품 구입 및 방송 자료 준비" },
-      { offset: 7, title: "학부모 안내 및 좌석 배치 확정" },
-      { offset: 1, title: "식순·방송·졸업장 최종 리허설" }
-    ]
-  }
+const GENERAL_WORKFLOW_STEPS = [
+  { offset: 30, title: "목표·대상·범위를 정하고 기본 계획 세우기" },
+  { offset: 21, title: "담당자 역할과 예산·협조 사항 정리하기" },
+  { offset: 14, title: "필요 자료·물품·장소와 안전 사항 준비하기" },
+  { offset: 7, title: "관련 구성원에게 안내하고 참여 현황 확인하기" },
+  { offset: 3, title: "진행 순서와 비상 대응 방법 점검하기" },
+  { offset: 1, title: "최종 체크리스트로 빠진 준비 확인하기" }
 ];
 let memoryTasks = null;
 
-const state = { tasks: [], filter: "all", query: "", loading: true, saving: false };
+const state = { tasks: [], filter: "all", query: "", loading: true, saving: false, pendingTask: null, workflowDraft: [], workflowSource: "general" };
 
 const elements = {
   userStatusPanel: document.querySelector("#user-status-panel"),
@@ -74,6 +36,15 @@ const elements = {
   dueDateInput: document.querySelector("#task-due-date"),
   submitTask: document.querySelector("#submit-task"),
   formError: document.querySelector("#form-error"),
+  workflowReview: document.querySelector("#workflow-review"),
+  workflowReviewLoading: document.querySelector("#workflow-review-loading"),
+  workflowReviewContent: document.querySelector("#workflow-review-content"),
+  workflowStepList: document.querySelector("#workflow-step-list"),
+  workflowSource: document.querySelector("#workflow-source"),
+  workflowReviewError: document.querySelector("#workflow-review-error"),
+  addWorkflowStep: document.querySelector("#add-workflow-step"),
+  backToTask: document.querySelector("#back-to-task"),
+  confirmWorkflow: document.querySelector("#confirm-workflow"),
   toast: document.querySelector("#toast"),
   statUrgent: document.querySelector("#stat-urgent"),
   statSoon: document.querySelector("#stat-soon"),
@@ -226,33 +197,107 @@ function dateBefore(value, days) {
   return formatLocalDate(date);
 }
 
-function getWorkflowTemplate(task) {
-  if (task.category !== "행사/수업") return null;
-  return WORKFLOW_TEMPLATES.find((template) => template.pattern.test(task.title)) || {
-    name: "학교 행사",
-    steps: [
-      { offset: 30, title: "행사 기본 계획서 작성" },
-      { offset: 14, title: "담당자별 준비 현황 및 필요 물품 취합" },
-      { offset: 7, title: "안내문 발송 및 안전관리 계획 점검" },
-      { offset: 1, title: "행사 운영 동선·방송·물품 최종 확인" }
-    ]
-  };
+function normalizeWorkflowSteps(steps) {
+  return (Array.isArray(steps) ? steps : [])
+    .map((step, index) => ({
+      id: String(step.id || `step-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`),
+      title: String(step.title || "").trim().slice(0, 100),
+      offset: Math.max(0, Math.min(365, Math.round(Number(step.offset) || 0))),
+      description: String(step.description || "").trim().slice(0, 160),
+      included: step.included !== false
+    }))
+    .filter((step) => step.title)
+    .sort((a, b) => b.offset - a.offset);
 }
 
-function buildWorkflowTasks(parentTask) {
-  const template = getWorkflowTemplate(parentTask);
-  if (!template) return [];
-  return template.steps.map((step) => ({
-    category: "행사/수업",
+function buildGeneralWorkflow(task) {
+  const remainingDays = Math.max(0, getDaysUntil(task.dueDate));
+  let steps = GENERAL_WORKFLOW_STEPS.filter((step) => step.offset <= remainingDays);
+  if (steps.length < 3) {
+    const compactOffsets = [...new Set([Math.floor(remainingDays * 0.8), Math.floor(remainingDays * 0.45), Math.min(1, remainingDays)])]
+      .filter((offset) => offset >= 0)
+      .sort((a, b) => b - a);
+    const compactTitles = [
+      "목표와 완료 기준을 정하고 실행 계획 세우기",
+      "필요한 자료·협조·준비물을 확보하기",
+      "결과물을 검토하고 빠진 사항 최종 확인하기"
+    ];
+    steps = compactOffsets.map((offset, index) => ({ offset, title: compactTitles[index] }));
+  }
+  return normalizeWorkflowSteps(steps);
+}
+
+const workflowService = {
+  async suggest(task) {
+    if (isGasEnvironment() || location.protocol === "file:") {
+      return { source: "general", steps: buildGeneralWorkflow(task) };
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetch("/api/workflow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(task),
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error("AI 제안을 불러오지 못했습니다.");
+      const result = await response.json();
+      const steps = normalizeWorkflowSteps(result.steps);
+      if (!steps.length) throw new Error("추천 단계가 없습니다.");
+      return { source: result.source === "ai" ? "ai" : "general", steps };
+    } catch (error) {
+      console.info("일반 프로세스 제안으로 전환합니다.", error.message);
+      return { source: "general", steps: buildGeneralWorkflow(task) };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+};
+
+function buildWorkflowTasks(parentTask, steps) {
+  return normalizeWorkflowSteps(steps).filter((step) => step.included).map((step) => ({
+    category: parentTask.category,
     title: step.title,
     dueDate: dateBefore(parentTask.dueDate, step.offset),
     priority: step.offset <= 3 ? "긴급" : "보통",
-    memo: `${parentTask.title} 준비 단계 · 행사 D-${step.offset}`,
+    memo: step.description || `${parentTask.title} 준비 단계 · D-${step.offset}`,
     autoGenerated: true,
     parentTaskId: parentTask.id,
     workflowTitle: parentTask.title,
     workflowOffset: step.offset
   }));
+}
+
+function renderWorkflowDraft() {
+  const selectedCount = state.workflowDraft.filter((step) => step.included && step.title.trim()).length;
+  elements.workflowSource.textContent = state.workflowSource === "ai" ? "AI 맞춤 제안" : "일반 프로세스 제안";
+  elements.confirmWorkflow.textContent = `선택한 ${selectedCount}개 단계와 함께 등록`;
+  elements.confirmWorkflow.disabled = state.saving;
+  elements.workflowStepList.innerHTML = state.workflowDraft.map((step, index) => {
+    const dueDate = state.pendingTask ? dateBefore(state.pendingTask.dueDate, step.offset) : "";
+    return `
+      <article data-workflow-step-id="${escapeHtml(step.id)}" class="rounded-2xl border p-4 transition ${step.included ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-60"}">
+        <div class="flex items-start gap-3">
+          <label class="mt-1 flex shrink-0 cursor-pointer items-center gap-2 text-xs font-bold text-slate-600">
+            <input type="checkbox" class="workflow-include h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500" ${step.included ? "checked" : ""} />
+            <span class="sr-only">${index + 1}단계 포함</span>
+          </label>
+          <div class="min-w-0 flex-1">
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <span class="text-[10px] font-black tracking-wider text-blue-600">준비 ${index + 1}단계</span>
+              <span class="text-[11px] font-semibold text-slate-400">예정일 ${escapeHtml(dueDate)}</span>
+            </div>
+            <input type="text" maxlength="100" value="${escapeHtml(step.title)}" class="workflow-title min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-800 outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50" aria-label="${index + 1}단계 제목" />
+            <div class="mt-2 flex items-center gap-2">
+              <label class="flex items-center gap-2 rounded-xl bg-slate-100 px-3 text-xs font-bold text-slate-600">D-<input type="number" min="0" max="365" value="${step.offset}" class="workflow-offset h-9 w-14 bg-transparent text-center text-sm font-black text-blue-700 outline-none" aria-label="${index + 1}단계 D-Day" /></label>
+              <span class="text-[11px] font-medium text-slate-400">완료일 기준 며칠 전</span>
+              <button type="button" class="delete-workflow-step ml-auto grid h-9 w-9 place-items-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600" aria-label="${index + 1}단계 삭제"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>
+            </div>
+          </div>
+        </div>
+      </article>`;
+  }).join("");
 }
 
 function escapeHtml(value = "") {
@@ -363,7 +408,7 @@ function renderWorkflowAlerts() {
     return `
       <article class="rounded-xl border p-4 ${tone}">
         <div class="flex items-center justify-between gap-2">
-          <span class="text-[10px] font-black uppercase tracking-wider">STEP ${index + 1} · 행사 D-${escapeHtml(task.workflowOffset)}</span>
+          <span class="text-[10px] font-black tracking-wider">준비 ${index + 1}단계 · 마감 D-${escapeHtml(task.workflowOffset)}</span>
           <span class="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-bold">${escapeHtml(timing)}</span>
         </div>
         <h3 class="mt-2 text-sm font-extrabold leading-5 text-slate-900">${escapeHtml(task.title)}</h3>
@@ -426,6 +471,12 @@ function showToast(message, isError = false) {
 function openModal() {
   elements.form.reset();
   elements.formError.hidden = true;
+  elements.workflowReview.hidden = true;
+  elements.workflowReviewContent.hidden = true;
+  elements.workflowReviewLoading.hidden = false;
+  elements.form.hidden = false;
+  state.pendingTask = null;
+  state.workflowDraft = [];
   elements.dueDateInput.value = formatLocalDate(startOfToday());
   elements.modal.hidden = false;
   document.body.classList.add("modal-open");
@@ -435,6 +486,8 @@ function openModal() {
 function closeModal() {
   elements.modal.hidden = true;
   document.body.classList.remove("modal-open");
+  state.pendingTask = null;
+  state.workflowDraft = [];
   elements.openModal.focus();
 }
 
@@ -480,13 +533,53 @@ async function handleSubmit(event) {
   if (state.saving || !elements.form.reportValidity()) return;
   state.saving = true;
   elements.submitTask.disabled = true;
-  elements.submitTask.textContent = "등록 중...";
+  elements.submitTask.textContent = "준비 단계 생성 중...";
   elements.formError.hidden = true;
 
-  const task = Object.fromEntries(new FormData(elements.form).entries());
+  state.pendingTask = Object.fromEntries(new FormData(elements.form).entries());
+  elements.form.hidden = true;
+  elements.workflowReview.hidden = false;
+  elements.workflowReviewLoading.hidden = false;
+  elements.workflowReviewContent.hidden = true;
   try {
-    const created = normalizeTask(await taskService.createTask(task));
-    const workflowTasks = buildWorkflowTasks(created);
+    const suggestion = await workflowService.suggest(state.pendingTask);
+    state.workflowDraft = suggestion.steps;
+    state.workflowSource = suggestion.source;
+    renderWorkflowDraft();
+    elements.workflowReviewLoading.hidden = true;
+    elements.workflowReviewContent.hidden = false;
+  } catch (error) {
+    state.workflowDraft = buildGeneralWorkflow(state.pendingTask);
+    state.workflowSource = "general";
+    renderWorkflowDraft();
+    elements.workflowReviewLoading.hidden = true;
+    elements.workflowReviewContent.hidden = false;
+  } finally {
+    state.saving = false;
+    elements.submitTask.disabled = false;
+    elements.confirmWorkflow.disabled = false;
+    elements.submitTask.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1" aria-hidden="true"></i>준비 단계 제안받기';
+  }
+}
+
+function returnToTaskForm() {
+  if (state.saving) return;
+  elements.workflowReview.hidden = true;
+  elements.form.hidden = false;
+  requestAnimationFrame(() => elements.titleInput.focus());
+}
+
+async function confirmWorkflow() {
+  if (state.saving || !state.pendingTask) return;
+  const includedSteps = state.workflowDraft.filter((step) => step.included && step.title.trim());
+  state.saving = true;
+  elements.confirmWorkflow.disabled = true;
+  elements.confirmWorkflow.textContent = "등록 중...";
+  elements.workflowReviewError.hidden = true;
+
+  try {
+    const created = normalizeTask(await taskService.createTask(state.pendingTask));
+    const workflowTasks = buildWorkflowTasks(created, includedSteps);
     const generatedTasks = [];
     let workflowError = null;
     for (const workflowTask of workflowTasks) {
@@ -508,13 +601,58 @@ async function handleSubmit(event) {
       showToast("새 업무를 등록했습니다.");
     }
   } catch (error) {
-    elements.formError.textContent = error.message || "업무 등록 중 오류가 발생했습니다.";
-    elements.formError.hidden = false;
+    elements.workflowReviewError.textContent = error.message || "업무 등록 중 오류가 발생했습니다.";
+    elements.workflowReviewError.hidden = false;
   } finally {
     state.saving = false;
-    elements.submitTask.disabled = false;
-    elements.submitTask.textContent = "등록 완료";
+    elements.confirmWorkflow.disabled = false;
+    if (!elements.modal.hidden) renderWorkflowDraft();
   }
+}
+
+function addWorkflowStep() {
+  const suggestedOffset = Math.max(0, Math.min(365, Math.floor(Math.max(1, getDaysUntil(state.pendingTask.dueDate)) / 2)));
+  const stepId = `step-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  state.workflowDraft.push({
+    id: stepId,
+    title: "새 준비 단계",
+    offset: suggestedOffset,
+    description: "",
+    included: true
+  });
+  state.workflowDraft.sort((a, b) => b.offset - a.offset);
+  renderWorkflowDraft();
+  const addedTitle = elements.workflowStepList.querySelector(`[data-workflow-step-id="${stepId}"] .workflow-title`);
+  if (addedTitle) addedTitle.select();
+}
+
+function getWorkflowDraftStep(target) {
+  const row = target.closest("[data-workflow-step-id]");
+  return row ? state.workflowDraft.find((step) => step.id === row.dataset.workflowStepId) : null;
+}
+
+function handleWorkflowStepInput(event) {
+  const step = getWorkflowDraftStep(event.target);
+  if (!step) return;
+  if (event.target.matches(".workflow-title")) step.title = event.target.value;
+  if (event.target.matches(".workflow-offset")) step.offset = Math.max(0, Math.min(365, Number(event.target.value) || 0));
+}
+
+function handleWorkflowStepChange(event) {
+  const step = getWorkflowDraftStep(event.target);
+  if (!step) return;
+  if (event.target.matches(".workflow-include")) step.included = event.target.checked;
+  if (event.target.matches(".workflow-offset")) state.workflowDraft.sort((a, b) => b.offset - a.offset);
+  renderWorkflowDraft();
+}
+
+function handleWorkflowStepClick(event) {
+  const button = event.target.closest(".delete-workflow-step");
+  if (!button) return;
+  const step = getWorkflowDraftStep(button);
+  if (!step) return;
+  state.workflowDraft = state.workflowDraft.filter((item) => item.id !== step.id);
+  renderWorkflowDraft();
 }
 
 function bindEvents() {
@@ -544,6 +682,12 @@ function bindEvents() {
   elements.openModal.addEventListener("click", openModal);
   elements.closeModal.addEventListener("click", closeModal);
   elements.cancelModal.addEventListener("click", closeModal);
+  elements.backToTask.addEventListener("click", returnToTaskForm);
+  elements.addWorkflowStep.addEventListener("click", addWorkflowStep);
+  elements.confirmWorkflow.addEventListener("click", confirmWorkflow);
+  elements.workflowStepList.addEventListener("input", handleWorkflowStepInput);
+  elements.workflowStepList.addEventListener("change", handleWorkflowStepChange);
+  elements.workflowStepList.addEventListener("click", handleWorkflowStepClick);
   elements.modal.addEventListener("click", (event) => {
     if (event.target === elements.modal) closeModal();
   });
