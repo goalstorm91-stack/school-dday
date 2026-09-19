@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="학교 행사와 교원 업무를 관리하는 D-Day 대시보드" />
+    <title>학교 행사 D-Day 체크</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <style>
+      body { font-family: Pretendard, "Noto Sans KR", system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+      [hidden] { display: none !important; }
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      .task-complete { opacity: 0.6; background: rgba(248, 250, 252, 0.75); }
+      .task-complete .task-title { text-decoration: line-through; color: #64748b; }
+      .modal-open { overflow: hidden; }
+      @keyframes deadline-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.28); }
+        50% { box-shadow: 0 0 0 7px rgba(244, 63, 94, 0); }
+      }
+      .deadline-pulse { animation: deadline-pulse 1.8s ease-in-out infinite; }
+    </style>
+  </head>
+  <body class="min-h-screen bg-[#f7f9fc] text-slate-900">
+    <header class="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
+      <div class="mx-auto flex min-h-[86px] max-w-[1440px] items-center justify-between gap-5 px-5 py-4 sm:px-8 lg:px-12">
+        <div class="flex min-w-0 items-center gap-4">
+          <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-xl text-white shadow-lg shadow-blue-200">
+            <i class="fa-regular fa-calendar-check" aria-hidden="true"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2.5">
+              <h1 class="text-lg font-black tracking-[-0.03em] text-slate-900 sm:text-xl">학교 행사 D-Day 체크</h1>
+              <span class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-600">
+                <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> 실시간 연동
+              </span>
+            </div>
+            <p class="mt-1 hidden text-xs font-medium text-slate-400 sm:block">행사 준비 타임라인 및 담당 업무 즉시 점검</p>
+          </div>
+        </div>
+        <div class="flex shrink-0 items-center gap-2.5">
+          <div class="hidden min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-600 md:flex">
+            <i class="fa-regular fa-user text-slate-400" aria-hidden="true"></i>
+            <span id="user-status-text" class="max-w-52 truncate">로딩 중...</span>
+          </div>
+          <button id="open-modal" type="button" class="inline-flex min-h-11 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-md shadow-blue-200 transition hover:bg-blue-700 active:scale-[0.98] sm:px-5">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i><span class="hidden sm:inline">새 업무 추가</span><span class="sm:hidden">추가</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="mx-auto w-full max-w-[1440px] px-5 py-6 sm:px-8 lg:px-12 lg:py-8">
+      <section class="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-5" aria-label="업무 현황">
+        <button type="button" data-summary-filter="urgent" class="group rounded-2xl border border-rose-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
+          <span class="flex items-start justify-between gap-3">
+            <span class="rounded-lg bg-rose-50 px-2.5 py-1 text-[11px] font-extrabold text-rose-500">오늘 마감</span>
+            <span class="grid h-9 w-9 place-items-center rounded-xl bg-rose-50 text-rose-500"><i class="fa-regular fa-circle-exclamation" aria-hidden="true"></i></span>
+          </span>
+          <span class="mt-5 block text-3xl font-black tracking-tight"><span id="stat-urgent">0</span><span class="ml-1 text-sm font-medium text-slate-500">건</span></span>
+          <span class="mt-1.5 block text-xs font-medium text-slate-400">당일 즉시 처리 요망</span>
+        </button>
+        <button type="button" data-summary-filter="soon" class="group rounded-2xl border border-amber-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
+          <span class="flex items-start justify-between gap-3">
+            <span class="rounded-lg bg-amber-50 px-2.5 py-1 text-[11px] font-extrabold text-amber-600">임박 (D-3 이내)</span>
+            <span class="grid h-9 w-9 place-items-center rounded-xl bg-amber-50 text-amber-500"><i class="fa-regular fa-clock" aria-hidden="true"></i></span>
+          </span>
+          <span class="mt-5 block text-3xl font-black tracking-tight"><span id="stat-soon">0</span><span class="ml-1 text-sm font-medium text-slate-500">건</span></span>
+          <span class="mt-1.5 block text-xs font-medium text-slate-400">3일 이내 마감 예정</span>
+        </button>
+        <button type="button" data-summary-filter="pending" class="group rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
+          <span class="flex items-start justify-between gap-3">
+            <span class="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold text-slate-600">진행 중 업무</span>
+            <span class="grid h-9 w-9 place-items-center rounded-xl bg-slate-50 text-slate-500"><i class="fa-solid fa-list-check" aria-hidden="true"></i></span>
+          </span>
+          <span class="mt-5 block text-3xl font-black tracking-tight"><span id="stat-progress">0</span><span class="ml-1 text-sm font-medium text-slate-500">건</span></span>
+          <span class="mt-1.5 block text-xs font-medium text-slate-400">미완료 전체 기준</span>
+        </button>
+        <button type="button" data-summary-filter="done" class="group rounded-2xl border border-emerald-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
+          <span class="flex items-start justify-between gap-3">
+            <span class="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-extrabold text-emerald-600">준비 완료율</span>
+            <span class="grid h-9 w-9 place-items-center rounded-xl bg-emerald-50 text-emerald-600"><i class="fa-regular fa-circle-check" aria-hidden="true"></i></span>
+          </span>
+          <span class="mt-5 flex items-baseline gap-2"><strong id="stat-rate" class="text-3xl font-black tracking-tight text-emerald-600">0%</strong><span id="stat-completed" class="text-xs font-semibold text-slate-500">0/0 완료</span></span>
+          <span class="mt-3 block h-2 overflow-hidden rounded-full bg-slate-100"><span id="stat-progress-bar" class="block h-full rounded-full bg-emerald-500 transition-all duration-500" style="width: 0%"></span></span>
+        </button>
+      </section>
+
+      <section class="mt-6 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <nav id="filters" class="no-scrollbar flex items-center gap-2 overflow-x-auto" aria-label="업무 필터">
+            <button type="button" data-filter="all" class="filter-button whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-bold">전체 보기 <span id="filter-all-count"></span></button>
+            <button type="button" data-filter="urgent" class="filter-button whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-bold">🔥 오늘 마감</button>
+            <button type="button" data-filter="soon" class="filter-button whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-bold">⌛ D-3 임박</button>
+            <button type="button" data-filter="pending" class="filter-button whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-bold">진행 중</button>
+            <button type="button" data-filter="done" class="filter-button whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-bold">완료됨</button>
+          </nav>
+          <label class="relative block w-full lg:w-80">
+            <span class="sr-only">업무 검색</span>
+            <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400" aria-hidden="true"></i>
+            <input id="task-search" type="search" autocomplete="off" placeholder="업무명 또는 메모 검색..." class="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50" />
+          </label>
+        </div>
+      </section>
+
+      <section class="mt-7" aria-labelledby="task-list-title">
+        <div class="mb-4 flex flex-col gap-2 px-1 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex items-center gap-2">
+            <h2 id="task-list-title" class="text-base font-black text-slate-900">세부 D-Day 업무 목록</h2>
+            <span id="result-count" class="text-xs font-medium text-slate-500" aria-live="polite">검색 결과 0건</span>
+          </div>
+          <p class="text-xs font-medium text-slate-400"><i class="fa-regular fa-circle-info mr-1" aria-hidden="true"></i>체크박스를 누르면 즉시 상태가 반영됩니다</p>
+        </div>
+        <div id="loading-state" class="rounded-2xl border border-slate-200 bg-white p-12 text-center text-sm font-semibold text-slate-400 shadow-sm">업무를 불러오는 중입니다...</div>
+        <div id="task-list" class="grid gap-4 lg:grid-cols-2" aria-live="polite"></div>
+        <div id="empty-state" hidden class="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
+          <i class="fa-regular fa-clipboard mb-3 text-4xl text-slate-300" aria-hidden="true"></i>
+          <p class="text-sm font-bold text-slate-700">조건에 맞는 업무가 없습니다.</p>
+          <p class="mt-1 text-xs text-slate-400">검색어나 필터를 바꾸거나 새 업무를 등록해 보세요.</p>
+        </div>
+      </section>
+    </main>
+
+    <div id="task-modal" hidden class="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="w-full rounded-t-3xl bg-white p-6 shadow-2xl sm:max-w-lg sm:rounded-3xl sm:p-7">
+        <div class="mb-5 flex items-center justify-between border-b border-slate-100 pb-4">
+          <div><p class="text-[11px] font-extrabold text-blue-600">NEW TASK</p><h2 id="modal-title" class="mt-1 text-xl font-black">새 업무 추가</h2></div>
+          <button id="close-modal" type="button" class="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200" aria-label="닫기"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        </div>
+        <form id="task-form" class="space-y-4 text-sm font-semibold text-slate-700">
+          <div>
+            <label for="task-category" class="mb-1.5 block">업무 구분</label>
+            <select id="task-category" name="category" class="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50">
+              <option value="공문/보고">📨 공문 및 보고</option><option value="품의/정산">💰 품의 및 정산</option><option value="학급/학생">🎒 학급 및 학생 지도</option><option value="행사/수업">🎯 행사 및 수업 준비</option><option value="연수/기타">📚 연수 및 기타</option>
+            </select>
+          </div>
+          <div>
+            <label for="task-title" class="mb-1.5 block">업무/공문명</label>
+            <input id="task-title" name="title" type="text" maxlength="100" required placeholder="예: 가을 체육대회 안전관리 계획" class="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50" />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div><label for="task-due-date" class="mb-1.5 block">마감 일자</label><input id="task-due-date" name="dueDate" type="date" required class="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 outline-none focus:border-blue-400 focus:bg-white" /></div>
+            <div><label for="task-priority" class="mb-1.5 block">우선순위</label><select id="task-priority" name="priority" class="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 outline-none focus:border-blue-400 focus:bg-white"><option value="긴급">🚨 긴급</option><option value="보통" selected>⚡ 보통</option><option value="여유">🌱 여유</option></select></div>
+          </div>
+          <div><label for="task-memo" class="mb-1.5 block">메모 (선택)</label><input id="task-memo" name="memo" type="text" maxlength="500" placeholder="협의 사항, 관련 문서 번호 등" class="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 outline-none focus:border-blue-400 focus:bg-white" /></div>
+          <p id="form-error" hidden class="rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700" role="alert"></p>
+          <div class="grid grid-cols-3 gap-2 pt-2"><button id="cancel-modal" type="button" class="min-h-12 rounded-xl bg-slate-100 font-bold text-slate-600 hover:bg-slate-200">취소</button><button id="submit-task" type="submit" class="col-span-2 min-h-12 rounded-xl bg-blue-600 font-bold text-white hover:bg-blue-700 disabled:opacity-60">등록 완료</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div id="toast" hidden class="fixed bottom-5 left-1/2 z-[60] -translate-x-1/2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-xl" role="status" aria-live="polite"></div>
+    <script src="app.js" defer></script>
+  </body>
+</html>
