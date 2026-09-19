@@ -372,16 +372,16 @@ function cardBorderClasses(task, tone) {
   return "border-slate-200";
 }
 
-function processTaskCard(task, { isParent = false, stepNumber = 0 } = {}) {
+function processTaskCard(task, { isParent = false, stepNumber = 0, hasNext = false } = {}) {
   const dday = getDday(task);
   const badgeText = task.completed ? "완료" : dday.label;
   const badgeStyle = task.completed ? "bg-slate-100 text-slate-500 ring-slate-200" : ddayClasses(dday.tone);
   const label = isParent ? "등록 업무" : `준비 ${stepNumber}단계 · 마감 D-${task.workflowOffset}`;
   const borderStyle = isParent ? "border-blue-300" : cardBorderClasses(task, dday.tone);
   return `
-    <article class="task-row flex w-[260px] shrink-0 flex-col rounded-2xl border p-4 shadow-sm transition sm:w-[285px] ${isParent ? "bg-blue-50/70 ring-4 ring-blue-50" : "bg-white"} ${borderStyle} ${task.completed ? "task-complete" : ""}" data-task-id="${escapeHtml(task.id)}">
+    <article class="task-row flex h-full min-w-0 flex-col rounded-2xl border p-4 shadow-sm transition ${isParent ? "bg-blue-50/70 ring-4 ring-blue-50" : "bg-white"} ${borderStyle} ${task.completed ? "task-complete" : ""}" data-task-id="${escapeHtml(task.id)}">
       <div class="flex items-center justify-between gap-3">
-        <span class="rounded-lg px-2 py-1 text-[10px] font-black ${isParent ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}">${escapeHtml(label)}</span>
+        <span class="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 text-[10px] font-black ${isParent ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}"><span class="truncate">${escapeHtml(label)}</span>${hasNext ? '<i class="fa-solid fa-arrow-right text-blue-500" aria-hidden="true"></i>' : ""}</span>
         <span class="shrink-0 rounded-full px-3 py-1 text-[11px] font-black ring-1 ring-inset ${badgeStyle}">${escapeHtml(badgeText)}</span>
       </div>
       <div class="mt-4 flex flex-1 items-start gap-3">
@@ -401,19 +401,21 @@ function processTaskCard(task, { isParent = false, stepNumber = 0 } = {}) {
     </article>`;
 }
 
-function processArrow(completed) {
-  return `<div class="flex w-10 shrink-0 items-center justify-center ${completed ? "text-slate-300" : "text-blue-400"}" aria-hidden="true"><span class="h-0.5 w-5 bg-current"></span><i class="fa-solid fa-chevron-right -ml-0.5 text-[10px]"></i></div>`;
-}
-
 function workflowGroupTemplate(group) {
   const anchor = group.parent || group.steps[0];
   const completedSteps = group.steps.filter((step) => step.completed).length;
-  const cards = [];
-  if (group.parent) cards.push(processTaskCard(group.parent, { isParent: true }));
-  group.steps.forEach((step, index) => {
-    if (cards.length) cards.push(processArrow(step.completed));
-    cards.push(processTaskCard(step, { stepNumber: index + 1 }));
-  });
+  const stepCards = group.steps.map((step, index) => processTaskCard(step, {
+    stepNumber: index + 1,
+    hasNext: index < group.steps.length - 1
+  })).join("");
+  const processBody = group.parent && group.steps.length
+    ? `<div class="grid gap-4 p-4 lg:grid-cols-[285px_minmax(0,1fr)] lg:gap-5">
+        <div>${processTaskCard(group.parent, { isParent: true })}</div>
+        <div class="border-t border-slate-200 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+          <div class="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">${stepCards}</div>
+        </div>
+      </div>`
+    : `<div class="p-4"><div class="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">${group.parent ? processTaskCard(group.parent, { isParent: true }) : stepCards}</div></div>`;
 
   return `
     <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-label="${escapeHtml(anchor.workflowTitle || anchor.title)} 업무 진행 과정">
@@ -421,10 +423,7 @@ function workflowGroupTemplate(group) {
         <span class="rounded-lg border px-2.5 py-1 text-[11px] font-bold ${categoryClasses(anchor.category)}">📌 ${escapeHtml(anchor.category)}</span>
         <span class="text-[11px] font-bold text-slate-500">${group.steps.length ? `준비 단계 ${completedSteps}/${group.steps.length} 완료` : "등록된 준비 단계 없음"}</span>
       </div>
-      <div class="no-scrollbar overflow-x-auto p-4">
-        <div class="flex min-w-max items-stretch">${cards.join("")}</div>
-      </div>
-      ${group.steps.length ? '<p class="border-t border-slate-100 px-4 py-2 text-[10px] font-medium text-slate-400 sm:hidden"><i class="fa-solid fa-arrows-left-right mr-1" aria-hidden="true"></i>옆으로 밀어 전체 단계를 확인하세요.</p>' : ""}
+      ${processBody}
     </section>`;
 }
 
