@@ -7,7 +7,7 @@ const FALLBACK_USER = "교직원 계정";
 /** Apps Script 웹 앱 진입점 */
 function doGet() {
   return HtmlService.createHtmlOutputFromFile("index")
-    .setTitle("선생님 업무 D-Day 플래너")
+    .setTitle("개인 업무 D-Day 체크")
     .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no")
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
