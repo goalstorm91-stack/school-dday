@@ -2,6 +2,7 @@ const STORAGE_KEY = "SCHOOL_DDAY_TASKS";
 const LEGACY_STORAGE_KEY = "school-dday-dashboard.tasks.v1";
 const CATEGORIES = ["공문/보고", "품의/정산", "학급/학생", "행사/수업", "연수/기타"];
 const PRIORITIES = ["긴급", "보통", "여유"];
+const INITIAL_SAMPLE_TASK_IDS = new Set(["T-01", "T-02", "T-03", "T-04", "T-05", "T-06"]);
 const GENERAL_WORKFLOW_STEPS = [
   { offset: 30, title: "목표·대상·범위를 정하고 기본 계획 세우기" },
   { offset: 21, title: "담당자 역할과 예산·협조 사항 정리하기" },
@@ -70,23 +71,6 @@ function formatLocalDate(date) {
   return `${year}-${month}-${day}`;
 }
 
-function dateFromOffset(offset) {
-  const date = startOfToday();
-  date.setDate(date.getDate() + offset);
-  return formatLocalDate(date);
-}
-
-function createMockTasks() {
-  return [
-    { id: "T-01", category: "공문/보고", title: "2학기 특수교육 대상학생 맞춤형 지원 실태조사 공문", dueDate: dateFromOffset(0), priority: "긴급", memo: "K-에듀파인 정보공시 제출", completed: false, owner: "김철수 선생님", createdAt: new Date().toISOString() },
-    { id: "T-02", category: "품의/정산", title: "하반기 과학실 실험용 화학 약품 및 안전용구 품의", dueDate: dateFromOffset(1), priority: "보통", memo: "MSDS 자료 점검", completed: false, owner: "박민호 선생님", createdAt: new Date().toISOString() },
-    { id: "T-03", category: "학급/학생", title: "1차 학교생활기록부 교과학습발달상황 세특 입력", dueDate: dateFromOffset(3), priority: "긴급", memo: "나이스(NEIS) 글자수 마감 확인", completed: false, owner: "이영희 선생님", createdAt: new Date().toISOString() },
-    { id: "T-04", category: "행사/수업", title: "가을 현장체험학습 안전관리 계획 및 사전답사 보고서", dueDate: dateFromOffset(7), priority: "보통", memo: "학운위 심의 통과분", completed: false, owner: "이영희 선생님", createdAt: new Date().toISOString() },
-    { id: "T-05", category: "행사/수업", title: "운동회 기본 운영계획서 내부 기안", dueDate: dateFromOffset(-5), priority: "보통", memo: "", completed: true, owner: "김철수 선생님", createdAt: new Date().toISOString() },
-    { id: "T-06", category: "연수/기타", title: "초청 강사 명단 확정 및 위촉 공문 발송", dueDate: dateFromOffset(-2), priority: "여유", memo: "", completed: true, owner: "정다은 선생님", createdAt: new Date().toISOString() }
-  ];
-}
-
 function parseLocalDate(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
   if (!match) return new Date(NaN);
@@ -130,16 +114,15 @@ function loadLocalTasks() {
     const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
     const stored = JSON.parse(current || legacy || "null");
     if (Array.isArray(stored)) {
-      const normalized = stored.map(normalizeTask);
-      if (!current && legacy) saveLocalTasks(normalized);
+      const normalized = stored.map(normalizeTask).filter((task) => !INITIAL_SAMPLE_TASK_IDS.has(task.id));
+      if (normalized.length !== stored.length || (!current && legacy)) saveLocalTasks(normalized);
       return normalized;
     }
   } catch (error) {
     console.warn("저장된 로컬 데이터를 읽지 못했습니다.", error);
   }
-  const initialTasks = createMockTasks();
-  saveLocalTasks(initialTasks);
-  return initialTasks;
+  saveLocalTasks([]);
+  return [];
 }
 
 function saveLocalTasks(tasks) {
@@ -388,7 +371,7 @@ function taskTemplate(task) {
       </div>
       <div class="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-3 text-xs font-medium text-slate-500">
         <span><i class="fa-regular fa-calendar mr-1.5 text-slate-400" aria-hidden="true"></i>마감: <strong class="font-semibold text-slate-600">${escapeHtml(task.dueDate)}</strong></span>
-        <span class="flex min-w-0 items-center gap-2"><span class="truncate"><i class="fa-regular fa-user mr-1.5 text-slate-400" aria-hidden="true"></i>${escapeHtml(task.owner)}</span><button type="button" class="delete-task rounded-lg p-1.5 text-slate-300 transition hover:bg-rose-50 hover:text-rose-500" aria-label="${escapeHtml(task.title)} 삭제"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button></span>
+        <button type="button" class="delete-task rounded-lg p-1.5 text-slate-300 transition hover:bg-rose-50 hover:text-rose-500" aria-label="${escapeHtml(task.title)} 삭제"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>
       </div>
     </article>`;
 }
